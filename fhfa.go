@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -22,14 +23,13 @@ type HPIgeo struct {
 
 type HPIdata map[string]*HPIgeo
 
-func (h *HPIgeo) GeoName() string{
+func (h *HPIgeo) GeoName() string {
 	return h.geoName
 }
 
 func (h *HPIgeo) GeoCode() string {
 	return h.geoCode
 }
-
 
 // DateIndex returns the index in h.dates of the target date, dt. If dt is in the range of the
 // data but not there, DateIndex returns the largest date less than dt.
@@ -55,19 +55,24 @@ func (h *HPIgeo) DateIndex(dt int) (int, error) {
 	return indx, nil
 }
 
-func (h *HPIgeo) HPI(dt int) (float64, error){
-	var(
+func (h *HPIgeo) HPI(dt int) (float64, error) {
+	var (
 		indx int
-		e error
+		e    error
 	)
 
-	if indx, e = h.DateIndex(dt); e!=nil {
+	if indx, e = h.DateIndex(dt); e != nil {
 		return 0, e
 	}
 
 	return h.hpi[indx], nil
 }
 
+// Save saves the data as a CSV
+func (d HPIdata) Save(localFile string) error{
+
+	return nil
+}
 
 func URLs(series string) (string, error) {
 	series = strings.ToLower(series)
@@ -92,12 +97,11 @@ func URLs(series string) (string, error) {
 	}
 }
 
-
 // Fetch returns the FHFA XLSX sheet as a string
 //
 // source - either the url from urls() or a file name
 func Fetch(source string) (data string, e error) {
-	if !strings.Contains("http", source) {
+	if !strings.Contains(source, "http") {
 		var (
 			e     error
 			file  *os.File
@@ -130,7 +134,7 @@ func Fetch(source string) (data string, e error) {
 	return string(body), nil
 }
 
-// SaveCSV saves the CSV to a file.
+// Save saves the XLSX to a file.
 //
 // - csv -- string respresentation of the Fed CSV file.
 //
@@ -226,4 +230,12 @@ func Parse(xlsFile string) (HPIdata, error) {
 	}
 
 	return hd, nil
+}
+
+func ToYrQtr(dt time.Time) int {
+	yr := dt.Year()
+	mon := int(dt.Month())
+	qtr := 1 + (mon-1)/3
+
+	return 10*yr + qtr
 }
