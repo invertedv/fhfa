@@ -32,7 +32,7 @@ func TestToYrQtr(t *testing.T) {
 	}
 }
 
-func TestHPI(t *testing.T) {
+func TestHPIgeo_HPI(t *testing.T) {
 	dt := time.Date(2003, 7, 17, 0, 0, 0, 0, time.UTC)
 	dtQtr := ToYrQtr(dt)
 
@@ -62,7 +62,7 @@ func TestHPI(t *testing.T) {
 	}
 }
 
-func TestTime(t *testing.T) {
+func TestTimes(t *testing.T) {
 	hd, e3 := Parse("/home/will/Downloads/hpi_at_metro.xlsx")
 	assert.Nil(t, e3)
 
