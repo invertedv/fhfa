@@ -62,6 +62,10 @@ func TestHPIgeo_HPI(t *testing.T) {
 	}
 }
 
+func TestBest(t *testing.T) {
+	
+}
+
 func TestTimes(t *testing.T) {
 	hd, e3 := Parse("/home/will/Downloads/hpi_at_metro.xlsx")
 	assert.Nil(t, e3)
