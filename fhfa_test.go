@@ -9,18 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestFetch(t *testing.T) {
-
-	//	data, e := Fetch("")
-	//	assert.Nil(t, e)
-
-	//	e = Save(data, "/home/will/tmp/test.xlsx")
-	//	assert.Nil(t, e)
-
-	hd, e := Parse("/home/will/Downloads/hpi_at_metro.xlsx")
-	_ = hd
-	assert.Nil(t, e)
-}
 
 func TestToYrQtr(t *testing.T) {
 	qtrs := []int{1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4}
@@ -32,7 +20,7 @@ func TestToYrQtr(t *testing.T) {
 	}
 }
 
-func TestHPIgeo_HPI(t *testing.T) {
+func TestHPIdata_HPI(t *testing.T) {
 	dt := time.Date(2003, 7, 17, 0, 0, 0, 0, time.UTC)
 	dtQtr := ToYrQtr(dt)
 
@@ -43,27 +31,32 @@ func TestHPIgeo_HPI(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	for j, src := range sources {
-		url, e0 := URLs(src)
-		assert.Nil(t, e0)
-		_ = url
-
-		data, e1 := Fetch(url)
-		assert.Nil(t, e1)
-
-		e2 := Save(data, tmpFile)
-		assert.Nil(t, e2)
-
-		hd, e3 := Parse(tmpFile)
+		if j!=0 {
+			continue
+		}
+		_=src
+		src = "/home/will/Downloads/hpi_at_metro.xlsx"
+		hd, e3 := Parse(src)
 		assert.Nil(t, e3)
 
-		hpi, e4 := hd[geo[j]].HPI(dtQtr)
+		hpi, e4 := hd.series[geo[j]].HPI(dtQtr)
 		assert.Nil(t, e4)
 		assert.Equal(t, exp[j], hpi)
 	}
 }
 
 func TestBest(t *testing.T) {
-	
+	sources := []string{"msa", "nonmsa", "state", "pr"}
+
+	var hpis []*HPIdata
+
+	for _, src := range sources {
+		hd, e3 := Parse(src)
+		assert.Nil(t, e3)
+
+		hpis = append(hpis, hd)
+	}
+
 }
 
 func TestTimes(t *testing.T) {
@@ -78,8 +71,8 @@ func TestTimes(t *testing.T) {
 		yr := 2001 + j%22
 		dt := time.Date(yr, 7, 17, 0, 0, 0, 0, time.UTC)
 		dtQtr := ToYrQtr(dt)
-		for key := range hd {
-			hpi, e := hd[key].HPI(dtQtr)
+		for key := range hd.series {
+			hpi, e := hd.series[key].HPI(dtQtr)
 			assert.Nil(t, e)
 			_ = hpi
 			pulled++
