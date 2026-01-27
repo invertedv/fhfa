@@ -11,7 +11,7 @@ readily usable within Go.
 
 ### Details
 
-This package will pull the data from the FHFA web site and will find the HPI for individual geos and dates. The data can also be read from the FHFA XLSX files directly if they have already been downloaded. The data is loaded into a stuct of type HPIdata. The HPI method of HPIdata returns the house price index for a given date (specified as an int in the format CCYYQ) and geo location.
+This package will pull the data from the FHFA web site and find the HPI for individual geos and dates. The data can also be read from the FHFA XLSX files directly, if they have already been downloaded. Once loaded, the package provides access to series.
 
 
 The indices are available [here](https://www.fhfa.gov/data/hpi/datasets?tab=quarterly-data).

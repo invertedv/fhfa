@@ -1,3 +1,16 @@
+/*
+# Purpose
+
+The purpose of this package is to make the FHFA house price indices available in a format that is fast and
+readily usable within Go.
+
+# Details
+
+This package will pull the data from the FHFA web site and find the HPI for individual geos and dates. The data can also
+be read from the FHFA XLSX files directly, if they have already been downloaded. Once loaded, the package provides access to series.
+
+The XLSX format is chosen since not all of the data is available as a CSV but all are as XLSX.
+*/
 package fhfa
 
 import (
@@ -13,7 +26,9 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// HPIgeo holds the HPI data for a single geo (state, MSA ...)
+// TODO: rename to HPIseries??
+
+// HPIgeo holds the HPI data for a single geo (state, metro (msa) ...)
 type HPIgeo struct {
 	geoName string
 	geoCode string
@@ -21,6 +36,7 @@ type HPIgeo struct {
 	hpi     []float64
 }
 
+// HPIdata manages the data for a single geo level (e.g. metro, state)
 type HPIdata struct {
 	geoLevel string
 	series   map[string]*HPIgeo
@@ -28,7 +44,7 @@ type HPIdata struct {
 
 // DateIndex returns the index in h.dates of the target date, dt. If dt is in the range of the
 // data but not there, DateIndex returns the largest date less than dt.
-// An error is returned if dt is outside the range of dates in h.Date.
+// An error is returned if dt is outside the range of dates in h.date.
 //
 // -- dt -- date to find the index for, in CCYYMMDD format.
 func (h *HPIgeo) DateIndex(dt int) (int, error) {
@@ -58,6 +74,14 @@ func (h *HPIgeo) GeoName() string {
 	return h.geoName
 }
 
+// Data returns the data series for the geo
+func (h *HPIgeo) Data() (dts []int, hpi []float64) {
+	copy(dts, h.dates)
+	copy(hpi, h.hpi)
+
+	return dts, hpi
+}
+
 func (h *HPIgeo) HPI(dt int) (float64, error) {
 	var (
 		indx int
@@ -71,9 +95,49 @@ func (h *HPIgeo) HPI(dt int) (float64, error) {
 	return h.hpi[indx], nil
 }
 
-// TODO
 // Save saves the data as a CSV
 func (d *HPIdata) Save(localFile string) error {
+	var (
+		e    error
+		file *os.File
+	)
+
+	if file, e = os.Create(localFile); e != nil {
+		return e
+	}
+	defer file.Close()
+
+	var line strings.Builder
+
+	var geos []string
+	for g := range d.series {
+		geos = append(geos, g)
+	}
+	sort.Strings(geos)
+
+	hasCode := d.series[geos[0]].geoCode != ""
+	header := "geo,date,hpi\n"
+	if hasCode {
+		header = "geo,code,date,hpi\n"
+	}
+
+	line.WriteString(header)
+
+	for _, g := range geos {
+		v := d.series[g]
+		for j := range len(v.dates) {
+			linex := fmt.Sprintf("%s,%v,%0.2f\n", v.GeoName(), v.dates[j], v.hpi[j])
+			if hasCode {
+				linex = fmt.Sprintf("\"%s\",%s,%v,%0.2f\n", v.GeoName(), v.GeoCode(), v.dates[j], v.hpi[j])
+			}
+
+			line.WriteString(linex)
+		}
+	}
+
+	if _, e := file.WriteString(line.String()); e != nil {
+		return e
+	}
 
 	return nil
 }
@@ -90,24 +154,30 @@ func (d *HPIdata) HPI(geo string, dt int) (float64, error) {
 	return 0, fmt.Errorf("series not found")
 }
 
+func (d *HPIdata) Series(geo string) (*HPIgeo, error) {
+	if s, ok := d.series[geo]; ok {
+		return s, nil
+	}
+
+	return nil, fmt.Errorf("geo %s not found", geo)
+}
+
 // Best looks through the HPI series in order returning the first one that has data for the geo.
-// The idea is that there is a preference of the HPI series to use, say msa, non-msa, state, Puerto Rico.
-// So that if the location is in an MSA, that is used. If not, the non-msa is used, if not the State is
-// used and if not, Puerto Rico is used.  An error occurs if the geo is in none of these.
+// The idea is that there is a preference of the HPI series to use, say metro, non-metro, Puerto Rico.
 //
 // dt - date for the lookup
 //
 // keys - keys to use when looking in the corresponding hpis
 //
-// hpis - HPI series by geos
-func Best(dt int, keys []string, hpis []HPIdata) (hpi float64, geoLevel string, e error) {
+// hpis - HPI series by geos, ordered by preference
+func Best(dt int, keys []string, hpis []*HPIdata) (hpi float64, geoLevel string, e error) {
 	if len(keys) != len(hpis) || len(hpis) == 0 {
 		return 0, "", fmt.Errorf("invalid series")
 	}
 
 	for j, s := range hpis {
 		if hpi, e := s.HPI(keys[j], dt); e == nil {
-			return hpi, keys[j], nil
+			return hpi, s.geoLevel, nil
 		}
 	}
 
@@ -116,18 +186,11 @@ func Best(dt int, keys []string, hpis []HPIdata) (hpi float64, geoLevel string, 
 
 // Fetch pulls the FHFA XLSX file and saves it locally
 //
-// source - one of zip3, msa, nonmas, state, us, pr, mh
+// source - one of zip3, metro, nonmetro, state, us, pr, mh
 //
 // xlsxFile - file to save the data to.
 func Fetch(source, xlsxFile string) error {
-	var (
-		url string
-		e   error
-	)
-
-	if url, e = urls(source); e != nil {
-		return nil
-	}
+	url := urls(source)
 
 	client := &http.Client{}
 	req, _ := http.NewRequest("GET", url, nil)
@@ -135,7 +198,10 @@ func Fetch(source, xlsxFile string) error {
 	r, _ := client.Do(req)
 	defer func() { _ = r.Body.Close() }()
 
-	var body []byte
+	var (
+		body []byte
+		e    error
+	)
 
 	if body, e = io.ReadAll(r.Body); e != nil {
 		return e
@@ -191,19 +257,18 @@ func doRow(row []string, offset int) (geo string, yrqtr int, indx float64) {
 	return geo, yrqtr, indx
 }
 
-// Parse works through the XLSX file, returning the data as an HPIdata object
+// Load loads HPI data
 //
-// - source - either a file name or one of: zip3, msa, nonmsa, state, us, pr, mh
-func Parse(source string) (*HPIdata, error) {
-	geo := ""
-	if in(strings.ToLower(source), []string{"zip3", "msa", "nonmsa", "state", "us", "pr", "mh"}) {
+// - source - either a file name or one of: zip3, metros, nonmetro, state, us, pr, mh
+func Load(source string) (*HPIdata, error) {
+	geo := source
+	if in(strings.ToLower(source), []string{"zip3", "metro", "nonmetro", "state", "us", "pr", "mh"}) {
 		tmpFile := fmt.Sprintf("%s/hpi.xlsx", os.TempDir())
 		if e := Fetch(source, tmpFile); e != nil {
 			return nil, e
 		}
 		defer os.Remove(tmpFile)
 
-		geo = source
 		source = tmpFile
 	}
 
@@ -234,7 +299,7 @@ func Parse(source string) (*HPIdata, error) {
 			continue
 		}
 
-		// MSA data
+		// metro data
 		if strings.ToLower(row[2]) == "year" {
 			inData = true
 			hasGeoCode = 1
@@ -288,29 +353,26 @@ func ToYrQtr(dt time.Time) int {
 	return 10*yr + qtr
 }
 
-// urls returns the url of the house price index at the requested geo.
-//
-// series - series requested. Options are "us", "state", "msa", "nonmsa", "pr" and "mg"
-func urls(series string) (string, error) {
+func urls(series string) string {
 	series = strings.ToLower(series)
 
 	switch series {
 	case "us":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_us_and_census.xlsx", nil
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_us_and_census.xlsx"
 	case "state":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_state.xlsx", nil
-	case "msa":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_metro.xlsx", nil
-	case "nonmsa":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_nonmetro.xlsx", nil
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_state.xlsx"
+	case "metro":
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_metro.xlsx"
+	case "nonmetro":
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_nonmetro.xlsx"
 	case "pr":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_pr.xlsx", nil
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_pr.xlsx"
 	case "zip3":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_3zip.xlsx", nil
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_3zip.xlsx"
 	case "mh":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_mh.xlsx", nil
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_mh.xlsx"
 	default:
-		return "", fmt.Errorf("unrecognized series in dataURL: %s", series)
+		panic(fmt.Errorf("unrecognized series in dataURL: %s", series))
 	}
 }
 

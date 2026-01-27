@@ -2,6 +2,8 @@ package fhfa
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,40 +25,68 @@ func TestHPIdata_HPI(t *testing.T) {
 	dtQtr := ToYrQtr(dt)
 
 	exp := []float64{128.06, 204.16, 135.76, 176.88, 180.56, 117.09, 287.17}
-	sources := []string{"msa", "state", "zip3", "nonmsa", "pr", "mh", "us"}
+	sources := []string{"metro", "state", "zip3", "nonmetro", "pr", "mh", "us"}
 	geo := []string{"10180", "AR", "837", "CA", "PR", "USA", "USA"}
 
 	for j, src := range sources {
-		if j != 0 {
-			continue
-		}
-		_ = src
-		src = "/home/will/Downloads/hpi_at_metro.xlsx"
-		hd, e3 := Parse(src)
-		assert.Nil(t, e3)
+		hd, e1 := Load(src)
+		assert.Nil(t, e1)
 
-		hpi, e4 := hd.HPI(geo[j], dtQtr)
-		assert.Nil(t, e4)
+		hpi, e2 := hd.HPI(geo[j], dtQtr)
+		assert.Nil(t, e2)
 		assert.Equal(t, exp[j], hpi)
 	}
 }
 
 func TestBest(t *testing.T) {
-	sources := []string{"msa", "nonmsa", "state", "pr"}
+	sources := []string{"metro", "nonmetro", "state", "pr"}
+	//sources := []string{"/home/will/Downloads/hpi_at_metro.xlsx", "/home/will/Downloads/hpi_at_nonmetro.xlsx",
+	//		"/home/will/Downloads/hpi_at_state.xlsx", "/home/will/Downloads/hpi_at_pr.xlsx"}
 
 	var hpis []*HPIdata
 
 	for _, src := range sources {
-		hd, e3 := Parse(src)
+		hd, e3 := Load(src)
 		assert.Nil(t, e3)
 
 		hpis = append(hpis, hd)
 	}
 
+	keys := []string{"14260", "ID", "ID", "ID"}
+
+	_, geoLevel, e := Best(20251, keys, hpis)
+	assert.Nil(t, e)
+	ok := strings.Contains(geoLevel, "metro")
+	assert.Equal(t, true, ok)
+
+	keys = []string{"XXXXX", "ID", "ID", "ID"}
+
+	_, geoLevel, e = Best(20251, keys, hpis)
+	assert.Nil(t, e)
+	ok = strings.Contains(geoLevel, "nonmetro")
+	assert.Equal(t, true, ok)
+
+	keys = []string{"XXXXX", "PR", "PR", "PR"}
+
+	_, geoLevel, e = Best(20251, keys, hpis)
+	assert.Nil(t, e)
+	ok = strings.Contains(geoLevel, "pr")
+	assert.Equal(t, true, ok)
+
+}
+
+func TestHPIdata_Save(t *testing.T){
+	src := "/home/will/Downloads/hpi_at_metro.xlsx"
+	hd, e := Load(src)
+	assert.Nil(t, e)
+
+	tmpFile := fmt.Sprintf("%s/hpi.csv", os.TempDir())
+	e1 :=hd.Save(tmpFile)
+	assert.Nil(t, e1)
 }
 
 func TestTimes(t *testing.T) {
-	hd, e3 := Parse("/home/will/Downloads/hpi_at_metro.xlsx")
+	hd, e3 := Load("/home/will/Downloads/hpi_at_metro.xlsx")
 	assert.Nil(t, e3)
 
 	const n = 100000
