@@ -90,9 +90,6 @@ func (d *HPIdata) HPI(geo string, dt int) (float64, error) {
 	return 0, fmt.Errorf("series not found")
 }
 
-// THINK ABOUT...Return the Series of an HPI value?
-// THINK ABOUT .. should HPIdata also store its geo level?
-//
 // Best looks through the HPI series in order returning the first one that has data for the geo.
 // The idea is that there is a preference of the HPI series to use, say msa, non-msa, state, Puerto Rico.
 // So that if the location is in an MSA, that is used. If not, the non-msa is used, if not the State is
@@ -102,7 +99,7 @@ func (d *HPIdata) HPI(geo string, dt int) (float64, error) {
 //
 // keys - keys to use when looking in the corresponding hpis
 //
-// hpis - HPI series
+// hpis - HPI series by geos
 func Best(dt int, keys []string, hpis []HPIdata) (hpi float64, geoLevel string, e error) {
 	if len(keys) != len(hpis) || len(hpis) == 0 {
 		return 0, "", fmt.Errorf("invalid series")
@@ -117,7 +114,7 @@ func Best(dt int, keys []string, hpis []HPIdata) (hpi float64, geoLevel string, 
 	return 0, "", fmt.Errorf("geo not found in Best")
 }
 
-// Fetch returns the FHFA XLSX sheet as a string
+// Fetch pulls the FHFA XLSX file and saves it locally
 //
 // source - one of zip3, msa, nonmas, state, us, pr, mh
 //
@@ -145,6 +142,27 @@ func Fetch(source, xlsxFile string) error {
 	}
 
 	return save(string(body), xlsxFile)
+}
+
+// Save saves the XLSX to a file.
+//
+// - data -- string respresentation of the FHFA XLSX as pulled by Fetch()
+//
+// - localFile -- file to create.
+func save(data, localFile string) error {
+	var (
+		e    error
+		file *os.File
+	)
+
+	if file, e = os.Create(localFile); e != nil {
+		return e
+	}
+	defer file.Close()
+
+	_, e = file.WriteString(data)
+
+	return e
 }
 
 // doRow converts row values to fields required for HPIgeo
@@ -175,7 +193,7 @@ func doRow(row []string, offset int) (geo string, yrqtr int, indx float64) {
 
 // Parse works through the XLSX file, returning the data as an HPIdata object
 //
-// - source - either a file name or one of zip3, msa, nonmsa, state, us, pr, mh
+// - source - either a file name or one of: zip3, msa, nonmsa, state, us, pr, mh
 func Parse(source string) (*HPIdata, error) {
 	geo := ""
 	if in(strings.ToLower(source), []string{"zip3", "msa", "nonmsa", "state", "us", "pr", "mh"}) {
@@ -259,27 +277,6 @@ func Parse(source string) (*HPIdata, error) {
 	}
 
 	return hd, nil
-}
-
-// Save saves the XLSX to a file.
-//
-// - data -- string respresentation of the FHFA XLSX as pulled by Fetch()
-//
-// - localFile -- file to create.
-func save(data, localFile string) error {
-	var (
-		e    error
-		file *os.File
-	)
-
-	if file, e = os.Create(localFile); e != nil {
-		return e
-	}
-	defer file.Close()
-
-	_, e = file.WriteString(data)
-
-	return e
 }
 
 // ToYrQTR converts a date to a CCYYQ int

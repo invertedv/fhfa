@@ -2,13 +2,11 @@ package fhfa
 
 import (
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
-
 
 func TestToYrQtr(t *testing.T) {
 	qtrs := []int{1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4}
@@ -27,19 +25,17 @@ func TestHPIdata_HPI(t *testing.T) {
 	exp := []float64{128.06, 204.16, 135.76, 176.88, 180.56, 117.09, 287.17}
 	sources := []string{"msa", "state", "zip3", "nonmsa", "pr", "mh", "us"}
 	geo := []string{"10180", "AR", "837", "CA", "PR", "USA", "USA"}
-	tmpFile := fmt.Sprintf("%s/hpi.xlsx", os.TempDir())
-	defer os.Remove(tmpFile)
 
 	for j, src := range sources {
-		if j!=0 {
+		if j != 0 {
 			continue
 		}
-		_=src
+		_ = src
 		src = "/home/will/Downloads/hpi_at_metro.xlsx"
 		hd, e3 := Parse(src)
 		assert.Nil(t, e3)
 
-		hpi, e4 := hd.series[geo[j]].HPI(dtQtr)
+		hpi, e4 := hd.HPI(geo[j], dtQtr)
 		assert.Nil(t, e4)
 		assert.Equal(t, exp[j], hpi)
 	}
@@ -66,7 +62,7 @@ func TestTimes(t *testing.T) {
 	const n = 100000
 
 	now := time.Now()
-	pulled :=0
+	pulled := 0
 	for j := range n {
 		yr := 2001 + j%22
 		dt := time.Date(yr, 7, 17, 0, 0, 0, 0, time.UTC)
