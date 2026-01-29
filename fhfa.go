@@ -157,7 +157,7 @@ func (d *HPIdata) Save(localFile string) error {
 // hpiSeries holds the HPI data for a single geo (state, metro (msa) ...)
 type hpiSeries struct {
 	geoName string
-//	geoCode string
+	geoCode string
 	dates   []int
 	indx    []float64
 }
