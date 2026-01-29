@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const source = "file"
+const source = "file" // "file" reads from local xlsx, anything else pulls from web
 
 func sources() []string {
 	if source == "file" {
@@ -25,7 +25,6 @@ func sources() []string {
 	}
 
 	return []string{"zip3", "metro", "nonmetro", "state", "us", "pr", "mh"}
-
 }
 
 func TestToYrQtr(t *testing.T) {
@@ -35,6 +34,19 @@ func TestToYrQtr(t *testing.T) {
 		yrqtr := ToYrQtr(dt)
 		exp := 20260 + qtrs[m]
 		assert.Equal(t, exp, yrqtr)
+	}
+}
+
+func TestToDate(t *testing.T) {
+	qtrs := []int{1, 2, 3, 4}
+	mo := []time.Month{1, 4, 7, 10}
+	yrs := []int{2000, 2020, 2021, 2025}
+	for j, yr := range yrs {
+		dt := 10*yr + qtrs[j]
+		dttm, e := ToTime(dt)
+		assert.Nil(t, e)
+		exp := time.Date(yr, mo[j], 1, 0, 0, 0, 0, time.UTC)
+		assert.Equal(t, exp, dttm)
 	}
 }
 

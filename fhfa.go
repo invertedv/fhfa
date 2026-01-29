@@ -25,6 +25,8 @@ The series available are:
 
 - manufactured housing
 
+Note that all dates are ints in CCYYQ format.
+
 The XLSX format is chosen since not all of the data is available as a CSV but all are as XLSX.
 */
 package fhfa
@@ -42,15 +44,13 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// also, tests for Change
-
-// HPIdata manages the data for a single geo level (e.g. metro, state)
+// HPIdata manages the data for a single geo level (e.g. metro, state).
 type HPIdata struct {
 	geoLevel string
 	series   map[string]*hpiSeries
 }
 
-// Change returns the ratio of the house price index at dtEnd to dtStart
+// Change returns the ratio of the house price index at dtEnd (CCYYQ) to dtStart (CCYYQ).
 func (d *HPIdata) Change(geo string, dtStart, dtEnd int) (float64, error) {
 	if series, ok := d.series[geo]; ok {
 		return series.change(dtStart, dtEnd)
@@ -59,7 +59,17 @@ func (d *HPIdata) Change(geo string, dtStart, dtEnd int) (float64, error) {
 	return 0, fmt.Errorf("series not found")
 }
 
-// Data returns the house price series (dates, index) for geo.
+// ChangeTime returns the ratio of the house price index at dateEnd to dateStart
+func (d *HPIdata) ChangeTime(geo string, dateStart, dateEnd time.Time) (float64, error) {
+	if series, ok := d.series[geo]; ok {
+		return series.changeTime(dateStart, dateEnd)
+	}
+
+	return 0, fmt.Errorf("series not found")
+
+}
+
+// Data returns the house price series (dates, index) for geo value (e.g. NY).
 func (d *HPIdata) Data(geo string) (dts []int, index []float64, e error) {
 	if series, ok := d.series[geo]; ok {
 		dts, index = series.data()
@@ -70,21 +80,21 @@ func (d *HPIdata) Data(geo string) (dts []int, index []float64, e error) {
 
 }
 
-// GeoLevel returns the aggregation level of the data (e.g. metro, non-metro)
+// GeoLevel returns the aggregation level of the data (e.g. metro, nonmetro, state).
 func (d *HPIdata) GeoLevel() string {
 	return d.geoLevel
 }
 
 // Name returns the name of the geo. Meaninful only for MSAs.
-func (d *HPIdata) Name(geo string) (string, error){
-		if series, ok := d.series[geo]; ok {
+func (d *HPIdata) Name(geo string) (string, error) {
+	if series, ok := d.series[geo]; ok {
 		return series.name(), nil
 	}
 
 	return "", fmt.Errorf("series not found")
 }
 
-// Geos returns a slice of geo values in HPIdata (e.g. State postal names, MSA codes)
+// Geos returns a slice of geo values in HPIdata (e.g. State postal names, MSA codes).
 func (d *HPIdata) Geos() []string {
 	var geos []string
 	for k := range d.series {
@@ -94,11 +104,7 @@ func (d *HPIdata) Geos() []string {
 	return geos
 }
 
-// Index returns the house price index for the geo at date dt
-//
-// geo - geo level (e.g. metro, nonmetro, mh)
-//
-// dt  - date in CCYYQ format
+// Index returns the house price index for the geo value (e.g TX) at date dt (CCYYQ format).
 func (d *HPIdata) Index(geo string, dt int) (float64, error) {
 	if series, ok := d.series[geo]; ok {
 		return series.index(dt)
@@ -107,7 +113,16 @@ func (d *HPIdata) Index(geo string, dt int) (float64, error) {
 	return 0, fmt.Errorf("series not found")
 }
 
-// Save saves the data as a CSV
+// LastDate returns the last date (CCYYQ format) for which there's data.
+func (d *HPIdata) LastDate() int {
+	for _, v := range d.series {
+		return v.lastDate()
+	}
+
+	return 0
+}
+
+// Save saves the data as a CSV.
 func (d *HPIdata) Save(localFile string) error {
 	var (
 		e    error
@@ -154,12 +169,54 @@ func (d *HPIdata) Save(localFile string) error {
 	return nil
 }
 
-// hpiSeries holds the HPI data for a single geo (state, metro (msa) ...)
+// hpiSeries holds the HPI data for a single geo value (e.g. CA).
 type hpiSeries struct {
 	geoName string
 	geoCode string
 	dates   []int
 	indx    []float64
+}
+
+func (h *hpiSeries) change(dtStart, dtEnd int) (float64, error) {
+	var (
+		hpiS, hpiE float64
+		e          error
+	)
+
+	if hpiS, e = h.index(dtStart); e != nil {
+		return 0, e
+	}
+
+	if hpiE, e = h.index(dtEnd); e != nil {
+		return 0, e
+	}
+
+	return hpiE / hpiS, nil
+}
+
+func (h *hpiSeries) changeTime(dateStart, dateEnd time.Time) (float64, error) {
+	var (
+		hpiS, hpiE float64
+		e          error
+	)
+
+	if hpiS, e = h.index(ToYrQtr(dateStart)); e != nil {
+		return 0, e
+	}
+
+	if hpiE, e = h.index(ToYrQtr(dateEnd)); e != nil {
+		return 0, e
+	}
+
+	return hpiE / hpiS, nil
+}
+
+// data returns the data.
+func (h *hpiSeries) data() (dts []int, hpi []float64) {
+	copy(dts, h.dates)
+	copy(hpi, h.indx)
+
+	return dts, hpi
 }
 
 // dateIndex returns the index in h.dates of the target date, dt. If dt is in the range of the
@@ -186,31 +243,6 @@ func (h *hpiSeries) dateIndex(dt int) (int, error) {
 	return indx, nil
 }
 
-func (h *hpiSeries) change(dtStart, dtEnd int) (float64, error) {
-	var (
-		hpiS, hpiE float64
-		e          error
-	)
-
-	if hpiS, e = h.index(dtStart); e != nil {
-		return 0, e
-	}
-
-	if hpiE, e = h.index(dtEnd); e != nil {
-		return 0, e
-	}
-
-	return hpiE / hpiS, nil
-}
-
-// data returns the data series for the geo
-func (h *hpiSeries) data() (dts []int, hpi []float64) {
-	copy(dts, h.dates)
-	copy(hpi, h.indx)
-
-	return dts, hpi
-}
-
 func (h *hpiSeries) index(dt int) (float64, error) {
 	var (
 		indx int
@@ -224,15 +256,18 @@ func (h *hpiSeries) index(dt int) (float64, error) {
 	return h.indx[indx], nil
 }
 
-func (h *hpiSeries) name() string{
+func (h *hpiSeries) name() string {
 	return h.geoName
 }
 
+func (h *hpiSeries) lastDate() int {
+	return h.dates[len(h.dates)-1]
+}
 
 // Best looks through the HPI series returning the first one that has data for the geo.
-// The idea is that there is a preference of the HPI series to use, say metro then non-metro.
+// The idea is that there is a preference of the HPI series to use, say metro then nonmetro.
 //
-// dt - date for the lookup
+// dt - date for the lookup (CCYYQ)
 //
 // keys - keys to use when looking in the corresponding hpis
 //
@@ -300,7 +335,7 @@ func save(data, localFile string) error {
 
 // Load loads HPIdata
 //
-//   - source - either a file name or one of: zip3, metros, nonmetro, state, us, pr, mh. The last options pull
+//   - source - either a file name or one of: zip3, metro, nonmetro, state, us, pr, mh. The last options pull
 //     the data from the FHFA web site.
 func Load(source string) (*HPIdata, error) {
 	// fetch from web?
@@ -341,7 +376,7 @@ func Load(source string) (*HPIdata, error) {
 		}
 
 		// find the start of the data
-		if !inData && (strings.ToLower(row[1]) == "year" || strings.ToLower(row[2]) == "year")  {
+		if !inData && (strings.ToLower(row[1]) == "year" || strings.ToLower(row[2]) == "year") {
 			inData = true
 			continue
 		}
@@ -440,6 +475,21 @@ func doRow(row []string, offset int) (geo string, yrqtr int, indx float64) {
 	}
 
 	return geo, yrqtr, indx
+}
+
+// ToDate converts a CCYYQ int to a date. The date returned is the first day of the first
+// month of the quarter
+func ToTime(dt int) (time.Time, error) {
+	yr := dt / 10
+	qtr := dt - 10*yr
+
+	if yr < 1960 || yr > 2060 || qtr < 1 || qtr > 4 {
+		return time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), fmt.Errorf("illegal date conversion")
+	}
+
+	month := time.Month(1 + 3*(qtr-1))
+
+	return time.Date(yr, month, 1, 0, 0, 0, 0, time.UTC), nil
 }
 
 // ToYrQTR converts a date to a CCYYQ int
