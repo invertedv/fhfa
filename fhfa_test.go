@@ -10,6 +10,24 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const source = "file"
+
+func sources() []string {
+	if source == "file" {
+		files := []string{"hpi_at_3zip", "hpi_at_metro", "hpi_at_nonmetro", "hpi_at_state", "hpi_at_us_and_census",
+			"hpi_at_pr", "hpi_at_mh"}
+		dir := os.Getenv("fhfaDir")
+		for j, f := range files {
+			files[j] = dir + f + ".xlsx"
+		}
+
+		return files
+	}
+
+	return []string{"zip3", "metro", "nonmetro", "state", "us", "pr", "mh"}
+
+}
+
 func TestToYrQtr(t *testing.T) {
 	qtrs := []int{1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4}
 	for m := range 12 {
@@ -24,9 +42,9 @@ func TestHPIdata_Index(t *testing.T) {
 	dt := time.Date(2003, 7, 17, 0, 0, 0, 0, time.UTC)
 	dtQtr := ToYrQtr(dt)
 
-	exp := []float64{128.06, 204.16, 135.76, 176.88, 180.56, 117.09, 287.17}
-	sources := []string{"metro", "state", "zip3", "nonmetro", "pr", "mh", "us"}
-	geo := []string{"10180", "AR", "837", "CA", "PR", "USA", "USA"}
+	sources := sources() // []string{"metro", "state", "zip3", "nonmetro", "pr", "mh", "us"}
+	geo := []string{"837", "10180", "CA", "AR", "USA", "PR", "USA"}
+	exp := []float64{135.76, 128.06, 176.88, 204.16, 287.17, 180.56, 117.09}
 
 	for j, src := range sources {
 		hd, e1 := Load(src)
@@ -54,23 +72,19 @@ func TestHPIdata_Change(t *testing.T) {
 }
 
 func TestHPIdata_geoLevel(t *testing.T) {
-	exp := []string{"metro", "state", "zip3", "nonmetro", "pr", "mh", "us"}
-	files := []string{"hpi_at_metro", "hpi_at_state", "hpi_at_3zip", "hpi_at_nonmetro",
-		"hpi_at_pr", "hpi_at_mh", "hpi_at_us_and_census"}
+	exp := []string{"zip3", "metro", "nonmetro", "state", "us", "pr", "mh"}
+	sources := sources()
 
-	for j, file := range files {
-		fn := "/home/will/Downloads/" + file + ".xlsx"
-		fn = exp[j]
-		hd, e := Load(fn)
+	for j, src := range sources {
+		hd, e := Load(src)
 		assert.Nil(t, e)
 		assert.Equal(t, exp[j], hd.GeoLevel())
 	}
 }
 
 func TestBest(t *testing.T) {
-	sources := []string{"metro", "nonmetro", "state", "pr"}
-	//sources := []string{"/home/will/Downloads/hpi_at_metro.xlsx", "/home/will/Downloads/hpi_at_nonmetro.xlsx",
-	//		"/home/will/Downloads/hpi_at_state.xlsx", "/home/will/Downloads/hpi_at_pr.xlsx"}
+	s := sources()
+	sources := []string{s[1], s[2], s[3], s[5]}
 
 	var hpis []*HPIdata
 
