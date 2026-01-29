@@ -20,7 +20,7 @@ func TestToYrQtr(t *testing.T) {
 	}
 }
 
-func TestHPIdata_HPI(t *testing.T) {
+func TestHPIdata_Index(t *testing.T) {
 	dt := time.Date(2003, 7, 17, 0, 0, 0, 0, time.UTC)
 	dtQtr := ToYrQtr(dt)
 
@@ -32,9 +32,38 @@ func TestHPIdata_HPI(t *testing.T) {
 		hd, e1 := Load(src)
 		assert.Nil(t, e1)
 
-		hpi, e2 := hd.HPI(geo[j], dtQtr)
+		hpi, e2 := hd.Index(geo[j], dtQtr)
 		assert.Nil(t, e2)
 		assert.Equal(t, exp[j], hpi)
+	}
+}
+
+func TestHPIdata_Change(t *testing.T) {
+	exp := []float64{1.328, 1.350, 1.582, 1.322, 1.21, 1.448, 1.368}
+	sources := []string{"metro", "state", "zip3", "nonmetro", "pr", "mh", "us"}
+	geo := []string{"10180", "AR", "837", "CA", "PR", "USA", "USA"}
+
+	for j, src := range sources {
+		hd, e1 := Load(src)
+		assert.Nil(t, e1)
+
+		c, e2 := hd.Change(geo[j], 20201, 20222)
+		assert.Nil(t, e2)
+		assert.InEpsilon(t, exp[j], c, 0.001)
+	}
+}
+
+func TestHPIdata_geoLevel(t *testing.T) {
+	exp := []string{"metro", "state", "zip3", "nonmetro", "pr", "mh", "us"}
+	files := []string{"hpi_at_metro", "hpi_at_state", "hpi_at_3zip", "hpi_at_nonmetro",
+		"hpi_at_pr", "hpi_at_mh", "hpi_at_us_and_census"}
+
+	for j, file := range files {
+		fn := "/home/will/Downloads/" + file + ".xlsx"
+		fn = exp[j]
+		hd, e := Load(fn)
+		assert.Nil(t, e)
+		assert.Equal(t, exp[j], hd.GeoLevel())
 	}
 }
 
@@ -75,13 +104,13 @@ func TestBest(t *testing.T) {
 
 }
 
-func TestHPIdata_Save(t *testing.T){
+func TestHPIdata_Save(t *testing.T) {
 	src := "/home/will/Downloads/hpi_at_metro.xlsx"
 	hd, e := Load(src)
 	assert.Nil(t, e)
 
 	tmpFile := fmt.Sprintf("%s/hpi.csv", os.TempDir())
-	e1 :=hd.Save(tmpFile)
+	e1 := hd.Save(tmpFile)
 	assert.Nil(t, e1)
 }
 
@@ -98,7 +127,7 @@ func TestTimes(t *testing.T) {
 		dt := time.Date(yr, 7, 17, 0, 0, 0, 0, time.UTC)
 		dtQtr := ToYrQtr(dt)
 		for key := range hd.series {
-			hpi, e := hd.series[key].HPI(dtQtr)
+			hpi, e := hd.series[key].index(dtQtr)
 			assert.Nil(t, e)
 			_ = hpi
 			pulled++

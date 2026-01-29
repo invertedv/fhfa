@@ -6,12 +6,28 @@
 
 ### Purpose
 
-The purpose of this package is to make the FHFA house price indices available in a format that is fast and
-readily usable within Go. 
+The purpose of this package is to make the FHFA house price indices available in a format that is readily usable within Go. 
 
 ### Details
 
-This package will pull the data from the FHFA web site and find the HPI for individual geos and dates. The data can also be read from the FHFA XLSX files directly, if they have already been downloaded. Once loaded, the package provides access to series.
+This package will:
+
+1. pull the data from the FHFA web site or load from a local xlsx.
+2. find the house price index for individual geos and dates. 
+
+The series available are:
+
+- metro
+
+- non-metro
+
+- state
+
+- us
+
+- Puerto Rico
+
+- manufactured housing
 
 
 The indices are available [here](https://www.fhfa.gov/data/hpi/datasets?tab=quarterly-data).
