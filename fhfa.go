@@ -51,7 +51,7 @@ type HPIdata struct {
 }
 
 // Change returns the ratio of the house price index at dtEnd (CCYYQ) to dtStart (CCYYQ).
-func (d *HPIdata) Change(geo string, dtStart, dtEnd int) (float64, error) {
+func (d *HPIdata) Change(geo string, dtStart, dtEnd int) (float32, error) {
 	if series, ok := d.series[geo]; ok {
 		return series.change(dtStart, dtEnd)
 	}
@@ -60,7 +60,7 @@ func (d *HPIdata) Change(geo string, dtStart, dtEnd int) (float64, error) {
 }
 
 // ChangeTime returns the ratio of the house price index at dateEnd to dateStart
-func (d *HPIdata) ChangeTime(geo string, dateStart, dateEnd time.Time) (float64, error) {
+func (d *HPIdata) ChangeTime(geo string, dateStart, dateEnd time.Time) (float32, error) {
 	if series, ok := d.series[geo]; ok {
 		return series.changeTime(dateStart, dateEnd)
 	}
@@ -70,7 +70,7 @@ func (d *HPIdata) ChangeTime(geo string, dateStart, dateEnd time.Time) (float64,
 }
 
 // Data returns the house price series (dates, index) for geo value (e.g. NY).
-func (d *HPIdata) Data(geo string) (dts []int, index []float64, e error) {
+func (d *HPIdata) Data(geo string) (dts []int, index []float32, e error) {
 	if series, ok := d.series[geo]; ok {
 		dts, index = series.data()
 		return dts, index, nil
@@ -105,7 +105,7 @@ func (d *HPIdata) Geos() []string {
 }
 
 // Index returns the house price index for the geo value (e.g TX) at date dt (CCYYQ format).
-func (d *HPIdata) Index(geo string, dt int) (float64, error) {
+func (d *HPIdata) Index(geo string, dt int) (float32, error) {
 	if series, ok := d.series[geo]; ok {
 		return series.index(dt)
 	}
@@ -174,12 +174,12 @@ type hpiSeries struct {
 	geoName string
 	geoCode string
 	dates   []int
-	indx    []float64
+	indx    []float32
 }
 
-func (h *hpiSeries) change(dtStart, dtEnd int) (float64, error) {
+func (h *hpiSeries) change(dtStart, dtEnd int) (float32, error) {
 	var (
-		hpiS, hpiE float64
+		hpiS, hpiE float32
 		e          error
 	)
 
@@ -194,9 +194,9 @@ func (h *hpiSeries) change(dtStart, dtEnd int) (float64, error) {
 	return hpiE / hpiS, nil
 }
 
-func (h *hpiSeries) changeTime(dateStart, dateEnd time.Time) (float64, error) {
+func (h *hpiSeries) changeTime(dateStart, dateEnd time.Time) (float32, error) {
 	var (
-		hpiS, hpiE float64
+		hpiS, hpiE float32
 		e          error
 	)
 
@@ -212,7 +212,7 @@ func (h *hpiSeries) changeTime(dateStart, dateEnd time.Time) (float64, error) {
 }
 
 // data returns the data.
-func (h *hpiSeries) data() (dts []int, hpi []float64) {
+func (h *hpiSeries) data() (dts []int, hpi []float32) {
 	copy(dts, h.dates)
 	copy(hpi, h.indx)
 
@@ -243,7 +243,7 @@ func (h *hpiSeries) dateIndex(dt int) (int, error) {
 	return indx, nil
 }
 
-func (h *hpiSeries) index(dt int) (float64, error) {
+func (h *hpiSeries) index(dt int) (float32, error) {
 	var (
 		indx int
 		e    error
@@ -272,7 +272,7 @@ func (h *hpiSeries) lastDate() int {
 // keys - keys to use when looking in the corresponding hpis
 //
 // hpis - house price index data ordered by preference
-func Best(dt int, keys []string, hpis []*HPIdata) (hpi float64, geoLevel string, e error) {
+func Best(dt int, keys []string, hpis []*HPIdata) (hpi float32, geoLevel string, e error) {
 	if len(keys) != len(hpis) || len(hpis) == 0 {
 		return 0, "", fmt.Errorf("invalid series")
 	}
@@ -388,7 +388,7 @@ func Load(source string) (*HPIdata, error) {
 		var (
 			geo   string
 			yrqtr int
-			index float64
+			index float32
 		)
 
 		// some index values are missing
@@ -452,7 +452,7 @@ func geoLevel(header string) string {
 }
 
 // doRow converts excelize row values to fields required for hpiSeries
-func doRow(row []string, offset int) (geo string, yrqtr int, indx float64) {
+func doRow(row []string, offset int) (geo string, yrqtr int, indx float32) {
 	geo = row[0]
 	var (
 		year, qtr int64
@@ -469,10 +469,13 @@ func doRow(row []string, offset int) (geo string, yrqtr int, indx float64) {
 
 	yrqtr = 10*int(year) + int(qtr)
 
-	if indx, e = strconv.ParseFloat(row[3+offset], 64); e != nil {
+	var ind float64
+	if ind, e = strconv.ParseFloat(row[3+offset], 64); e != nil {
 		// some rows have no index value
 		return "", 0, 0
 	}
+
+	indx = float32(ind)
 
 	return geo, yrqtr, indx
 }

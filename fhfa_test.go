@@ -56,7 +56,7 @@ func TestHPIdata_Index(t *testing.T) {
 
 	sources := sources() // []string{"metro", "state", "zip3", "nonmetro", "pr", "mh", "us"}
 	geo := []string{"837", "10180", "CA", "AR", "USA", "PR", "USA"}
-	exp := []float64{135.76, 128.06, 176.88, 204.16, 287.17, 180.56, 117.09}
+	exp := []float32{135.76, 128.06, 176.88, 204.16, 287.17, 180.56, 117.09}
 
 	for j, src := range sources {
 		hd, e1 := Load(src)
@@ -69,7 +69,7 @@ func TestHPIdata_Index(t *testing.T) {
 }
 
 func TestHPIdata_Change(t *testing.T) {
-	exp := []float64{1.328, 1.350, 1.582, 1.322, 1.21, 1.448, 1.368}
+	exp := []float32{1.328, 1.350, 1.582, 1.322, 1.21, 1.448, 1.368}
 	sources := []string{"metro", "state", "zip3", "nonmetro", "pr", "mh", "us"}
 	geo := []string{"10180", "AR", "837", "CA", "PR", "USA", "USA"}
 
