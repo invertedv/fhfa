@@ -2,6 +2,7 @@ package fhfa
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -10,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const source = "file" // "file" reads from local xlsx, anything else pulls from web
+const source = "web" // "file" reads from local xlsx, anything else pulls from web
 
 func sources() []string {
 	if source == "file" {
@@ -25,6 +26,17 @@ func sources() []string {
 	}
 
 	return []string{"zip3", "metro", "nonmetro", "state", "us", "pr", "mh"}
+}
+
+func TestQtrDiff(t *testing.T) {
+	dt0 := []int{20221, 20222, 20223, 20224}
+	dt1 := []int{20232, 20213, 20221, 20251}
+	exp := []int{5, 3, 2, 9}
+
+	for j, d0 := range dt0 {
+		d := QtrDiff(d0, dt1[j])
+		assert.Equal(t, exp[j], d)
+	}
 }
 
 func TestToYrQtr(t *testing.T) {
@@ -153,7 +165,7 @@ func TestTimes(t *testing.T) {
 		dt := time.Date(yr, 7, 17, 0, 0, 0, 0, time.UTC)
 		dtQtr := ToYrQtr(dt)
 		for key := range hd.series {
-			hpi, e := hd.series[key].index(dtQtr)
+			hpi, e := hd.Index(key, dtQtr)
 			assert.Nil(t, e)
 			_ = hpi
 			pulled++
@@ -161,4 +173,44 @@ func TestTimes(t *testing.T) {
 	}
 
 	fmt.Printf("Time to pull %v values: %0.0f seconds", pulled, time.Since(now).Seconds())
+}
+
+func TestHPIdata_Append(t *testing.T) {
+	const (
+		growth = 3.0
+		nQtr   = 12
+	)
+
+	hd, e := Load("state")
+	assert.Nil(t, e)
+
+	g := float32(math.Pow(1.0+growth, 1/12.0))
+
+	var dts []int
+	for j, geo := range hd.Geos() {
+		s, e := hd.Geo(geo)
+		assert.Nil(t, e)
+		ld, li := s.Last()
+		liKeep := li
+		if j == 0 {
+			for range nQtr {
+				ld = NextQtr(ld)
+				dts = append(dts, ld)
+			}
+		}
+
+		var ind []float32
+		for range nQtr {
+			li *= g
+			ind = append(ind, li)
+		}
+
+		e1 := s.Append(dts, ind)
+		assert.Nil(t, e1)
+
+		act, e2 := s.Index(dts[len(dts)-1])
+		assert.Nil(t, e2)
+		exp := float32(math.Pow(growth, 3)) * liKeep
+		assert.Equal(t, exp, act)
+	}
 }

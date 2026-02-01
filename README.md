@@ -34,3 +34,9 @@ The indices are available [here](https://www.fhfa.gov/data/hpi/datasets?tab=quar
 
 
 This package uses the FHFA files in XLSX format since not all of the data is available as a CSV but all are as XLSX.
+
+There are two basic data types here:
+
+- HPIseries holds the data for a specific geographic location (e.g. State=NY, zip3=837).
+- HPIdata holds the data for all the geographic locations of a specific type (e.g. zip3, MSA, State).
+
