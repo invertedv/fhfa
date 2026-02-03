@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const source = "web" // "file" reads from local xlsx, anything else pulls from web
+const source = "file" // "file" reads from local xlsx, anything else pulls from web
 
 func sources() []string {
 	if source == "file" {
@@ -25,7 +25,12 @@ func sources() []string {
 		return files
 	}
 
-	return []string{"zip3", "metro", "nonmetro", "state", "us", "pr", "mh"}
+	var srcs []string
+	for _, s := range []string{"zip3", "metro", "nonmetro", "state", "us", "pr", "mh"} {
+		srcs = append(srcs, URLs(s))
+	}
+
+	return srcs
 }
 
 func TestQtrDiff(t *testing.T) {
@@ -66,7 +71,7 @@ func TestHPIdata_Index(t *testing.T) {
 	dt := time.Date(2003, 7, 17, 0, 0, 0, 0, time.UTC)
 	dtQtr := ToYrQtr(dt)
 
-	sources := sources() // []string{"metro", "state", "zip3", "nonmetro", "pr", "mh", "us"}
+	sources := sources()
 	geo := []string{"837", "10180", "CA", "AR", "USA", "PR", "USA"}
 	exp := []float32{135.76, 128.06, 176.88, 204.16, 287.17, 180.56, 117.09}
 
@@ -77,14 +82,16 @@ func TestHPIdata_Index(t *testing.T) {
 		hpi, e2 := hd.Index(geo[j], dtQtr)
 		assert.Nil(t, e2)
 		assert.Equal(t, exp[j], hpi)
+
+		hpis, _ := hd.Geo(geo[j])
+		fmt.Println(hpis)
 	}
 }
 
 func TestHPIdata_Change(t *testing.T) {
-	exp := []float32{1.328, 1.350, 1.582, 1.322, 1.21, 1.448, 1.368}
-	sources := []string{"metro", "state", "zip3", "nonmetro", "pr", "mh", "us"}
-	geo := []string{"10180", "AR", "837", "CA", "PR", "USA", "USA"}
-
+	sources := sources()
+	exp := []float32{1.582, 1.328, 1.322, 1.350, 1.368, 1.21, 1.448}
+	geo := []string{"837", "10180", "CA", "AR", "USA", "PR", "USA"}
 	for j, src := range sources {
 		hd, e1 := Load(src)
 		assert.Nil(t, e1)
@@ -92,6 +99,10 @@ func TestHPIdata_Change(t *testing.T) {
 		c, e2 := hd.Change(geo[j], 20201, 20222)
 		assert.Nil(t, e2)
 		assert.InEpsilon(t, exp[j], c, 0.001)
+
+		if j == 0 {
+			fmt.Println(hd)
+		}
 	}
 }
 
@@ -139,7 +150,6 @@ func TestBest(t *testing.T) {
 	assert.Nil(t, e)
 	ok = strings.Contains(geoLevel, "pr")
 	assert.Equal(t, true, ok)
-
 }
 
 func TestHPIdata_Save(t *testing.T) {
@@ -181,7 +191,8 @@ func TestHPIdata_Append(t *testing.T) {
 		nQtr   = 12
 	)
 
-	hd, e := Load("state")
+	srcs := sources()
+	hd, e := Load(srcs[3])
 	assert.Nil(t, e)
 
 	g := float32(math.Pow(1.0+growth, 1/12.0))
@@ -214,3 +225,5 @@ func TestHPIdata_Append(t *testing.T) {
 		assert.Equal(t, exp, act)
 	}
 }
+
+// TODO delete unneeded funcs such as Fetch.

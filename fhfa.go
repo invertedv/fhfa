@@ -39,19 +39,18 @@ package fhfa
 
 import (
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/xuri/excelize/v2"
+	"github.com/invertedv/fetch"
 )
 
 // HPIdata manages all the series at a geographic level (e.g. all states, MSAs, etc)
 type HPIdata struct {
+	source   string
 	geoLevel string
 	series   map[string]*HPIseries
 }
@@ -67,6 +66,7 @@ func NewHPIdata(geoLevel string, series map[string]*HPIseries) (*HPIdata, error)
 	}
 
 	return &HPIdata{
+		source: "NewHPIdata()"
 		geoLevel: geoLevel,
 		series:   series,
 	}, nil
@@ -77,28 +77,19 @@ func NewHPIdata(geoLevel string, series map[string]*HPIseries) (*HPIdata, error)
 //   - source - either a file name or one of: zip3, metro, nonmetro, state, us, pr, mh. The last options pull
 //     the data from the FHFA web site.
 func Load(source string) (*HPIdata, error) {
-	// fetch from web?
-	if in(strings.ToLower(source), []string{"zip3", "metro", "nonmetro", "state", "us", "pr", "mh"}) {
-		tmpFile := fmt.Sprintf("%s/hpi.xlsx", os.TempDir())
-		if e := Fetch(source, tmpFile); e != nil {
-			return nil, e
-		}
-		defer os.Remove(tmpFile)
-
-		source = tmpFile
-	}
-
-	xlr, e := excelize.OpenFile(source)
-	if e != nil {
+	var (
+		rows fetch.Rows
+		e    error
+	)
+	if rows, e = fetch.FetchXLSX(source); e != nil {
 		return nil, e
 	}
-	defer xlr.Close()
 
-	rows, _ := xlr.GetRows(xlr.GetSheetName(0))
 	inData := false
 	lastGeo := ""
 
 	hd := &HPIdata{
+		source:   source,
 		geoLevel: geoLevel(rows[0][0]),
 		series:   make(map[string]*HPIseries),
 	}
@@ -326,6 +317,29 @@ func (hd *HPIdata) Save(localFile string) error {
 	return nil
 }
 
+func (hd *HPIdata) String() string {
+	var s strings.Builder
+	s.WriteString(fmt.Sprintf("Geo Level: %s\n", hd.geoLevel))
+	s.WriteString(fmt.Sprintf("Source: %s\n\n", hd.source))
+	s.WriteString("Sample Geos\n")
+
+	cnt := 0
+	for _, v := range hd.series {
+		s.WriteString(v.String())
+		cnt++
+		if cnt == 3 {
+			break
+		}
+	}
+
+	return s.String()
+}
+
+// Source returns the source of the data
+func (hd *HPIdata) Source() string {
+	return hd.source
+}
+
 ///////////////
 
 // HPIseries holds the HPI data for a single geo value (e.g. CA).
@@ -428,12 +442,12 @@ func (h *HPIseries) Data() (dts []int, hpi []float32) {
 	return dts, hpi
 }
 
-// dateIndex returns the index in h.dates of the target date, dt. If dt is in the range of the
+// DateIndex returns the index in h.dates of the target date, dt. If dt is in the range of the
 // data but not there, dateIndex returns the largest date less than dt.
 // An error is returned if dt is outside the range of dates in h.date.
 //
 // -- dt -- date to find the index for, in CCYYMMDD format.
-func (h *HPIseries) dateIndex(dt int) (int, error) {
+func (h *HPIseries) DateIndex(dt int) (int, error) {
 	if dt > h.dates[len(h.dates)-1] {
 		return -1, fmt.Errorf("date too large")
 	}
@@ -459,7 +473,7 @@ func (h *HPIseries) Index(dt int) (float32, error) {
 		e    error
 	)
 
-	if indx, e = h.dateIndex(dt); e != nil {
+	if indx, e = h.DateIndex(dt); e != nil {
 		return 0, e
 	}
 
@@ -474,6 +488,23 @@ func (h *HPIseries) Name() string {
 // Last returns the date and index value of the last date in the series.  This is unchanged if Append() is used.
 func (h *HPIseries) Last() (dt int, indx float32) {
 	return h.lastDt, h.lastIndx
+}
+
+func (h *HPIseries) String() string {
+	var s strings.Builder
+	s.WriteString(fmt.Sprintf("name: %s\ngeocode: %s\n", h.geoName, h.geoCode))
+	s.WriteString(fmt.Sprintf("Last Date (YrQtr): %d\n\n", h.lastDt))
+	s.WriteString("YearQtr   Index\n")
+	for j, dt := range h.dates {
+		s.WriteString(fmt.Sprintf("%d     %0.2f\n", dt, h.indx[j]))
+		if j == 4 {
+			break
+		}
+	}
+
+	s.WriteString("\n")
+
+	return s.String()
 }
 
 /////////////
@@ -498,32 +529,6 @@ func Best(dt int, keys []string, hpis []*HPIdata) (hpi float32, geoLevel string,
 	}
 
 	return 0, "", fmt.Errorf("geo/dt not found in Best")
-}
-
-// Fetch pulls the FHFA XLSX file and saves it locally
-//
-// source - one of zip3, metro, nonmetro, state, us, pr, mh
-//
-// xlsxFile - file to create
-func Fetch(source, xlsxFile string) error {
-	url := urls(source)
-
-	client := &http.Client{}
-	req, _ := http.NewRequest("GET", url, nil)
-
-	r, _ := client.Do(req)
-	defer func() { _ = r.Body.Close() }()
-
-	var (
-		body []byte
-		e    error
-	)
-
-	if body, e = io.ReadAll(r.Body); e != nil {
-		return e
-	}
-
-	return save(string(body), xlsxFile)
 }
 
 // ToDate converts a CCYYQ int to a date. The date returned is the first day of the first
@@ -667,28 +672,7 @@ func in[T comparable](needle T, haystack []T) bool {
 	return false
 }
 
-// save saves the XLSX to a file.
-//
-// - data -- string respresentation of the FHFA XLSX as pulled by Fetch()
-//
-// - localFile -- file to create.
-func save(data, localFile string) error {
-	var (
-		e    error
-		file *os.File
-	)
-
-	if file, e = os.Create(localFile); e != nil {
-		return e
-	}
-	defer file.Close()
-
-	_, e = file.WriteString(data)
-
-	return e
-}
-
-func urls(series string) string {
+func URLs(series string) string {
 	series = strings.ToLower(series)
 
 	switch series {
