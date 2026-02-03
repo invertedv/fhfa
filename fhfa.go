@@ -66,7 +66,7 @@ func NewHPIdata(geoLevel string, series map[string]*HPIseries) (*HPIdata, error)
 	}
 
 	return &HPIdata{
-		source: "NewHPIdata()"
+		source:   "NewHPIdata()",
 		geoLevel: geoLevel,
 		series:   series,
 	}, nil
