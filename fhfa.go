@@ -41,11 +41,10 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/invertedv/fetch"
+	"github.com/invertedv/dass"
 )
 
 // HPIdata manages all the series at a geographic level (e.g. all states, MSAs, etc)
@@ -72,76 +71,67 @@ func NewHPIdata(geoLevel string, series map[string]*HPIseries) (*HPIdata, error)
 	}, nil
 }
 
-// Load loads HPIdata
-//
-//   - source - either a file name or one of: zip3, metro, nonmetro, state, us, pr, mh. The last options pull
-//     the data from the FHFA web site.
 func Load(source string) (*HPIdata, error) {
 	var (
-		rows fetch.Rows
+		r    [][]string
+		rows *dass.Rows
 		e    error
 	)
-	if rows, e = fetch.FetchXLSX(source); e != nil {
+
+	if r, e = dass.FetchXLSX(source); e != nil {
+		return nil, e
+	}
+	geoLevel := geoLevel(r[0][0])
+	template := []string{"string", "int", "int", "float"}
+	names := []string{"geoCode", "year", "qtr", "index"}
+	miss := []string{"skip", "skip", "skip", "skip"}
+	if geoLevel == "metro" {
+		template = []string{"string", "string", "int", "int", "float"}
+		names = []string{"areaName", "geoCode", "year", "qtr", "index"}
+		miss = []string{"skip", "skip", "skip", "skip", "skip"}
+	}
+
+	if rows, e = dass.ParseRows(r, names, template, miss, 0); e != nil {
 		return nil, e
 	}
 
-	inData := false
 	lastGeo := ""
 
 	hd := &HPIdata{
 		source:   source,
-		geoLevel: geoLevel(rows[0][0]),
+		geoLevel: geoLevel,
 		series:   make(map[string]*HPIseries),
 	}
 
 	var series *HPIseries
-	hasGeoCode := 0
-	if hd.geoLevel == "metro" {
-		hasGeoCode = 1
-	}
 
-	for _, row := range rows {
+	for _, row := range rows.Iter() {
 		if len(row) < 4 {
 			continue
 		}
 
-		// find the start of the data
-		if !inData && (strings.ToLower(row[1]) == "year" || strings.ToLower(row[2]) == "year") {
-			inData = true
-			continue
-		}
-
-		if !inData {
-			continue
-		}
-
-		var (
-			geo   string
-			yrqtr int
-			index float32
-		)
-
-		// some index values are missing
-		if geo, yrqtr, index = doRow(row, hasGeoCode); index == 0 {
-			continue
-		}
+		geo := row["geoCode"].(string)
 
 		// New geo?
 		if geo != lastGeo {
 			lastGeo = geo
-			key := row[hasGeoCode]
+			key := row["geoCode"].(string)
 
 			series = &HPIseries{
 				geoName: geo,
-				geoCode: row[hasGeoCode],
+				geoCode: key,
 			}
 
 			hd.series[key] = series
 		}
 
-		series.dates = append(series.dates, yrqtr)
-		series.indx = append(series.indx, index)
-		series.lastDt = yrqtr
+		yrQtr := 10*row["year"].(int) + row["qtr"].(int)
+		indx := row["index"].(float32)
+
+		series.dates = append(series.dates, yrQtr)
+		series.indx = append(series.indx, indx)
+		series.lastDt = yrQtr
+		series.lastIndx = indx
 	}
 
 	return hd, nil
@@ -597,35 +587,6 @@ func QtrsOK(dt []int) bool {
 }
 
 ////////////
-
-// doRow converts excelize row values to fields required for hpiSeries
-func doRow(row []string, offset int) (geo string, yrqtr int, indx float32) {
-	geo = row[0]
-	var (
-		year, qtr int64
-		e         error
-	)
-
-	if year, e = strconv.ParseInt(row[1+offset], 10, 64); e != nil {
-		panic(e)
-	}
-
-	if qtr, e = strconv.ParseInt(row[2+offset], 10, 64); e != nil {
-		panic(e)
-	}
-
-	yrqtr = 10*int(year) + int(qtr)
-
-	var ind float64
-	if ind, e = strconv.ParseFloat(row[3+offset], 64); e != nil {
-		// some rows have no index value
-		return "", 0, 0
-	}
-
-	indx = float32(ind)
-
-	return geo, yrqtr, indx
-}
 
 // geoLevel returns the geographic level of the data (e.g. metro, us,..)
 func geoLevel(header string) string {

@@ -187,7 +187,7 @@ func TestTimes(t *testing.T) {
 
 func TestHPIdata_Append(t *testing.T) {
 	const (
-		growth = 3.0
+		qgrowth = 0.03
 		nQtr   = 12
 	)
 
@@ -195,7 +195,7 @@ func TestHPIdata_Append(t *testing.T) {
 	hd, e := Load(srcs[3])
 	assert.Nil(t, e)
 
-	g := float32(math.Pow(1.0+growth, 1/12.0))
+	g := float32(1.0 + qgrowth)
 
 	var dts []int
 	for j, geo := range hd.Geos() {
@@ -221,9 +221,8 @@ func TestHPIdata_Append(t *testing.T) {
 
 		act, e2 := s.Index(dts[len(dts)-1])
 		assert.Nil(t, e2)
-		exp := float32(math.Pow(growth, 3)) * liKeep
-		assert.Equal(t, exp, act)
+		exp := float32(math.Pow(1+qgrowth, 12)) * liKeep
+		assert.InEpsilon(t, exp, act, 0.001)
 	}
 }
 
-// TODO delete unneeded funcs such as Fetch.
