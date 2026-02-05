@@ -115,14 +115,18 @@ func Load(source string) (*HPIdata, error) {
 		// New geo?
 		if geo != lastGeo {
 			lastGeo = geo
-			key := row["geoCode"].(string)
 
-			series = &HPIseries{
-				geoName: geo,
-				geoCode: key,
+			name := geo
+			if geoLevel=="metro"{
+				name = row["areaName"].(string)
 			}
 
-			hd.series[key] = series
+			series = &HPIseries{
+				geoName: name,
+				geoCode: geo,
+			}
+
+			hd.series[geo] = series
 		}
 
 		yrQtr := 10*row["year"].(int) + row["qtr"].(int)
