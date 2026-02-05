@@ -1,6 +1,7 @@
 package fhfa
 
 import (
+	"database/sql"
 	"fmt"
 	"math"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -31,6 +33,35 @@ func sources() []string {
 	}
 
 	return srcs
+}
+
+// NewConnect established a new connection to ClickHouse.
+// host is IP address (assumes port 9000), memory is max_memory_usage
+func newConnectCH() *sql.DB {
+	user := os.Getenv("user")
+	host := os.Getenv("host")
+	password := os.Getenv("password")
+
+	db := clickhouse.OpenDB(
+		&clickhouse.Options{
+			Addr: []string{host + ":9000"},
+			Auth: clickhouse.Auth{
+				Database: "default",
+				Username: user,
+				Password: password,
+			},
+			DialTimeout: 300 * time.Second,
+			Compression: &clickhouse.Compression{
+				Method: clickhouse.CompressionLZ4,
+				Level:  0,
+			},
+		})
+
+	if e := db.Ping(); e != nil {
+		panic(e)
+	}
+
+	return db
 }
 
 func TestQtrDiff(t *testing.T) {
@@ -73,7 +104,7 @@ func TestHPIdata_Index(t *testing.T) {
 
 	sources := sources()
 	geo := []string{"837", "10180", "CA", "AR", "USA", "PR", "USA"}
-	exp := []float32{135.76, 128.06, 176.88, 204.16, 287.17, 180.56, 117.09}
+	exp := []float64{135.76, 128.06, 176.88, 204.16, 287.17, 180.56, 117.09}
 
 	for j, src := range sources {
 		hd, e1 := Load(src)
@@ -90,7 +121,7 @@ func TestHPIdata_Index(t *testing.T) {
 
 func TestHPIdata_Change(t *testing.T) {
 	sources := sources()
-	exp := []float32{1.582, 1.328, 1.322, 1.350, 1.368, 1.21, 1.448}
+	exp := []float64{1.582, 1.328, 1.322, 1.350, 1.368, 1.21, 1.448}
 	geo := []string{"837", "10180", "CA", "AR", "USA", "PR", "USA"}
 	for j, src := range sources {
 		hd, e1 := Load(src)
@@ -153,8 +184,7 @@ func TestBest(t *testing.T) {
 }
 
 func TestHPIdata_Save(t *testing.T) {
-	src := "/home/will/Downloads/hpi_at_metro.xlsx"
-	hd, e := Load(src)
+	hd, e := Load(sources()[3])
 	assert.Nil(t, e)
 
 	tmpFile := fmt.Sprintf("%s/hpi.csv", os.TempDir())
@@ -163,7 +193,7 @@ func TestHPIdata_Save(t *testing.T) {
 }
 
 func TestTimes(t *testing.T) {
-	hd, e3 := Load("/home/will/Downloads/hpi_at_metro.xlsx")
+	hd, e3 := Load(sources()[3])
 	assert.Nil(t, e3)
 
 	const n = 100000
@@ -188,14 +218,14 @@ func TestTimes(t *testing.T) {
 func TestHPIdata_Append(t *testing.T) {
 	const (
 		qgrowth = 0.03
-		nQtr   = 12
+		nQtr    = 12
 	)
 
 	srcs := sources()
 	hd, e := Load(srcs[3])
 	assert.Nil(t, e)
 
-	g := float32(1.0 + qgrowth)
+	g := 1.0 + qgrowth
 
 	var dts []int
 	for j, geo := range hd.Geos() {
@@ -210,7 +240,7 @@ func TestHPIdata_Append(t *testing.T) {
 			}
 		}
 
-		var ind []float32
+		var ind []float64
 		for range nQtr {
 			li *= g
 			ind = append(ind, li)
@@ -221,8 +251,47 @@ func TestHPIdata_Append(t *testing.T) {
 
 		act, e2 := s.Index(dts[len(dts)-1])
 		assert.Nil(t, e2)
-		exp := float32(math.Pow(1+qgrowth, 12)) * liKeep
+		exp := math.Pow(1+qgrowth, 12) * liKeep
 		assert.InEpsilon(t, exp, act, 0.001)
 	}
 }
 
+func TestLoadSQL(t *testing.T) {
+	db := newConnectCH()
+
+	srcs := sources()
+
+	table := os.Getenv("hpiState")
+	qry := fmt.Sprintf("SELECT toInt32(date/10) AS year, date - 10*year AS qtr, code AS geoCode, index FROM %s order by geoCode, year, qtr", table)
+
+	hd, e := LoadSQL(qry, "state", db)
+	assert.Nil(t, e)
+
+	hd1, e1 := Load(srcs[3])
+	assert.Nil(t, e1)
+
+	v, e2:= hd.Geo("AR")
+	assert.Nil(t, e2)
+
+	v1, e3 := hd1.Geo("AR")
+	assert.Nil(t, e3)
+
+	assert.Equal(t, v1, v)
+
+	table = os.Getenv("hpiMetro")
+	qry = fmt.Sprintf("SELECT toInt32(date/10) AS year, date - 10*year AS qtr, geo AS areaName, code AS geoCode, index FROM %s order by geoCode, year, qtr", table)
+	hd, e = LoadSQL(qry, "metro", db)
+	assert.Nil(t, e)
+
+	hd1, e1 = Load(srcs[1])
+	assert.Nil(t, e1)
+
+	v, e2= hd.Geo("10180")
+	assert.Nil(t, e2)
+
+	v1, e3 = hd1.Geo("10180")
+	assert.Nil(t, e3)
+
+	assert.Equal(t, v1, v)
+
+}

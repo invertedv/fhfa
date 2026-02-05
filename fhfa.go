@@ -38,6 +38,7 @@ There are two basic data types here:
 package fhfa
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"sort"
@@ -71,6 +72,50 @@ func NewHPIdata(geoLevel string, series map[string]*HPIseries) (*HPIdata, error)
 	}, nil
 }
 
+// LoadSQL loads from a query. The query must have these columns:
+//
+//   - year     - year of data
+//   - qtr      - quarter of data (1,2,3,4)
+//   - geoCode  - state abbreviation, zip3,
+//   - areaName - (for metro areas only), the name of the metro
+//   - index    - index value
+//
+// geoLevel is the geographic area (zip3, metro, nonmetro, state, us, pr, mh)
+func LoadSQL(query, geoLevel string, db *sql.DB) (*HPIdata, error) {
+	if !in(geoLevel, []string{"zip3", "metro", "nonmetro", "state", "us", "pr", "mg"}) {
+		return nil, fmt.Errorf("geoLevel must be one of zip3, metro, nonmetro, state, us, pr, mh")
+	}
+
+	var (
+		r *sql.Rows
+		e error
+	)
+	if r, e = db.Query(query); e != nil {
+		return nil, e
+	}
+
+	var (
+		rows *dass.Rows
+		e1   error
+	)
+	if rows, e1 = dass.ReadSQL(r); e1 != nil {
+		return nil, e1
+	}
+
+	hd := &HPIdata{
+		source:   query,
+		geoLevel: geoLevel,
+		series:   make(map[string]*HPIseries),
+	}
+
+	if e2 := load(hd, rows); e2 != nil {
+		return nil, e2
+	}
+
+	return hd, nil
+}
+
+// Load loads the data from source - either a local file or a web address
 func Load(source string) (*HPIdata, error) {
 	var (
 		r    [][]string
@@ -81,10 +126,12 @@ func Load(source string) (*HPIdata, error) {
 	if r, e = dass.FetchXLSX(source); e != nil {
 		return nil, e
 	}
+
 	geoLevel := geoLevel(r[0][0])
 	template := []string{"string", "int", "int", "float"}
 	names := []string{"geoCode", "year", "qtr", "index"}
 	miss := []string{"skip", "skip", "skip", "skip"}
+
 	if geoLevel == "metro" {
 		template = []string{"string", "string", "int", "int", "float"}
 		names = []string{"areaName", "geoCode", "year", "qtr", "index"}
@@ -95,47 +142,14 @@ func Load(source string) (*HPIdata, error) {
 		return nil, e
 	}
 
-	lastGeo := ""
-
 	hd := &HPIdata{
 		source:   source,
 		geoLevel: geoLevel,
 		series:   make(map[string]*HPIseries),
 	}
 
-	var series *HPIseries
-
-	for _, row := range rows.Iter() {
-		if len(row) < 4 {
-			continue
-		}
-
-		geo := row["geoCode"].(string)
-
-		// New geo?
-		if geo != lastGeo {
-			lastGeo = geo
-
-			name := geo
-			if geoLevel=="metro"{
-				name = row["areaName"].(string)
-			}
-
-			series = &HPIseries{
-				geoName: name,
-				geoCode: geo,
-			}
-
-			hd.series[geo] = series
-		}
-
-		yrQtr := 10*row["year"].(int) + row["qtr"].(int)
-		indx := row["index"].(float32)
-
-		series.dates = append(series.dates, yrQtr)
-		series.indx = append(series.indx, indx)
-		series.lastDt = yrQtr
-		series.lastIndx = indx
+	if e2 := load(hd, rows); e2 != nil {
+		return nil, e2
 	}
 
 	return hd, nil
@@ -165,7 +179,7 @@ func (hd *HPIdata) Append(ta *HPIdata) error {
 }
 
 // Change returns the ratio of the house price index at dtEnd (CCYYQ) to dtStart (CCYYQ)
-func (hd *HPIdata) Change(geo string, dtStart, dtEnd int) (float32, error) {
+func (hd *HPIdata) Change(geo string, dtStart, dtEnd int) (float64, error) {
 	var (
 		s *HPIseries
 		e error
@@ -179,7 +193,7 @@ func (hd *HPIdata) Change(geo string, dtStart, dtEnd int) (float32, error) {
 }
 
 // ChangeTime returns the ratio of the house price index at dtEnd to dtStart
-func (hd *HPIdata) ChangeTime(geo string, dtStart, dtEnd time.Time) (float32, error) {
+func (hd *HPIdata) ChangeTime(geo string, dtStart, dtEnd time.Time) (float64, error) {
 	var (
 		s *HPIseries
 		e error
@@ -235,7 +249,7 @@ func (hd *HPIdata) Geos() []string {
 }
 
 // Last returns the date and value of the last date that was not appended.
-func (hd *HPIdata) Last(geo string) (int, float32, error) {
+func (hd *HPIdata) Last(geo string) (int, float64, error) {
 	var (
 		s *HPIseries
 		e error
@@ -251,7 +265,7 @@ func (hd *HPIdata) Last(geo string) (int, float32, error) {
 }
 
 // Index returns the house price index for location geo (e.g. CA) at date dt (CCYYQ)
-func (hd *HPIdata) Index(geo string, dt int) (float32, error) {
+func (hd *HPIdata) Index(geo string, dt int) (float64, error) {
 	var (
 		s *HPIseries
 		e error
@@ -341,12 +355,12 @@ type HPIseries struct {
 	geoName  string
 	geoCode  string
 	dates    []int
-	indx     []float32
+	indx     []float64
 	lastDt   int
-	lastIndx float32
+	lastIndx float64
 }
 
-func NewHPIseries(geoName, geoCode string, dates []int, indx []float32) (*HPIseries, error) {
+func NewHPIseries(geoName, geoCode string, dates []int, indx []float64) (*HPIseries, error) {
 	if len(dates) == 0 || len(dates) != len(indx) {
 		return nil, fmt.Errorf("dates and indx don't agree")
 	}
@@ -366,7 +380,7 @@ func NewHPIseries(geoName, geoCode string, dates []int, indx []float32) (*HPIser
 }
 
 // Append appends (dts,indx) to h. Note this does not change the values returned by Last().
-func (h *HPIseries) Append(dts []int, indx []float32) error {
+func (h *HPIseries) Append(dts []int, indx []float64) error {
 	// check dates are OK
 	if QtrDiff(dts[0], h.lastDt) != 1 || !QtrsOK(dts) {
 		return fmt.Errorf("dates don't increment by quarter")
@@ -379,9 +393,9 @@ func (h *HPIseries) Append(dts []int, indx []float32) error {
 }
 
 // Change returns the ratio of the house price index at date dtEnd (CCYYQ) to date dtStart (CCYYQ).
-func (h *HPIseries) Change(dtStart, dtEnd int) (float32, error) {
+func (h *HPIseries) Change(dtStart, dtEnd int) (float64, error) {
 	var (
-		hpiS, hpiE float32
+		hpiS, hpiE float64
 		e          error
 	)
 
@@ -397,9 +411,9 @@ func (h *HPIseries) Change(dtStart, dtEnd int) (float32, error) {
 }
 
 // ChangeTime returns the house price index at date dtEnd to dtStart.
-func (h *HPIseries) ChangeTime(dateStart, dateEnd time.Time) (float32, error) {
+func (h *HPIseries) ChangeTime(dateStart, dateEnd time.Time) (float64, error) {
 	var (
-		hpiS, hpiE float32
+		hpiS, hpiE float64
 		e          error
 	)
 
@@ -429,7 +443,7 @@ func (h *HPIseries) Copy() *HPIseries {
 }
 
 // data returns the data.
-func (h *HPIseries) Data() (dts []int, hpi []float32) {
+func (h *HPIseries) Data() (dts []int, hpi []float64) {
 	copy(dts, h.dates)
 	copy(hpi, h.indx)
 
@@ -461,7 +475,7 @@ func (h *HPIseries) DateIndex(dt int) (int, error) {
 }
 
 // Index returns the house price index at date dt (CCYYQ).
-func (h *HPIseries) Index(dt int) (float32, error) {
+func (h *HPIseries) Index(dt int) (float64, error) {
 	var (
 		indx int
 		e    error
@@ -480,7 +494,7 @@ func (h *HPIseries) Name() string {
 }
 
 // Last returns the date and index value of the last date in the series.  This is unchanged if Append() is used.
-func (h *HPIseries) Last() (dt int, indx float32) {
+func (h *HPIseries) Last() (dt int, indx float64) {
 	return h.lastDt, h.lastIndx
 }
 
@@ -511,7 +525,7 @@ func (h *HPIseries) String() string {
 // keys - keys to use when looking in the corresponding hpis
 //
 // hpis - house price index data ordered by preference
-func Best(dt int, keys []string, hpis []*HPIdata) (hpi float32, geoLevel string, e error) {
+func Best(dt int, keys []string, hpis []*HPIdata) (hpi float64, geoLevel string, e error) {
 	if len(keys) != len(hpis) || len(hpis) == 0 {
 		return 0, "", fmt.Errorf("invalid series")
 	}
@@ -590,6 +604,29 @@ func QtrsOK(dt []int) bool {
 	return true
 }
 
+func URLs(series string) string {
+	series = strings.ToLower(series)
+
+	switch series {
+	case "us":
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_us_and_census.xlsx"
+	case "state":
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_state.xlsx"
+	case "metro":
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_metro.xlsx"
+	case "nonmetro":
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_nonmetro.xlsx"
+	case "pr":
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_pr.xlsx"
+	case "zip3":
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_3zip.xlsx"
+	case "mh":
+		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_mh.xlsx"
+	default:
+		panic(fmt.Errorf("unrecognized series in dataURL: %s", series))
+	}
+}
+
 ////////////
 
 // geoLevel returns the geographic level of the data (e.g. metro, us,..)
@@ -637,25 +674,40 @@ func in[T comparable](needle T, haystack []T) bool {
 	return false
 }
 
-func URLs(series string) string {
-	series = strings.ToLower(series)
+// load works through rows to load the dates and indices into hd
+func load(hd *HPIdata, rows *dass.Rows) error {
+	var series *HPIseries
 
-	switch series {
-	case "us":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_us_and_census.xlsx"
-	case "state":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_state.xlsx"
-	case "metro":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_metro.xlsx"
-	case "nonmetro":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_nonmetro.xlsx"
-	case "pr":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_pr.xlsx"
-	case "zip3":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_3zip.xlsx"
-	case "mh":
-		return "https://www.fhfa.gov/hpi/download/quarterly_datasets/hpi_at_mh.xlsx"
-	default:
-		panic(fmt.Errorf("unrecognized series in dataURL: %s", series))
+	lastGeo := ""
+
+	for _, row := range rows.Iter() {
+		geo := row["geoCode"].(string)
+
+		// New geo?
+		if geo != lastGeo {
+			lastGeo = geo
+
+			name := geo
+			if hd.geoLevel == "metro" {
+				name = row["areaName"].(string)
+			}
+
+			series = &HPIseries{
+				geoName: name,
+				geoCode: geo,
+			}
+
+			hd.series[geo] = series
+		}
+
+		yrQtr := 10*row["year"].(int) + row["qtr"].(int)
+		indx := row["index"].(float64)
+
+		series.dates = append(series.dates, yrQtr)
+		series.indx = append(series.indx, indx)
+		series.lastDt = yrQtr
+		series.lastIndx = indx
 	}
+
+	return nil
 }
